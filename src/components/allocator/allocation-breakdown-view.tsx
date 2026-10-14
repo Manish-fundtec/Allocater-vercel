@@ -90,7 +90,9 @@ const DEFAULT_FEE_CONFIG: FeeConfig = {
   effectiveFrom: "—",
 };
 
-function formatStepValue(step: CalcStep): string {
+function formatStepValue(
+  step: Pick<CalcStep, "value" | "format"> & { label?: string },
+): string {
   switch (step.format) {
     case "percent":
       return `${step.value.toFixed(4)}%`;
