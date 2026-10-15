@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Building2,
-  ChevronDown,
   FileSpreadsheet,
   LayoutDashboard,
   LogOut,
@@ -16,20 +15,10 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useFund } from "@/contexts/fund-context";
 import { getInitials } from "@/lib/allocator/format";
-import {
-  clearAuthSession,
-  getTychiFundListUrl,
-  getTychiSignInUrl,
-} from "@/lib/auth/session";
+import { clearAuthSession, getTychiSignInUrl } from "@/lib/auth/session";
 import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 type NavItem = {
   label: string;
@@ -153,8 +142,7 @@ function SidebarNav({
 }
 
 export function AllocatorSidebarContent() {
-  const { funds, fundId, selectedFund, setFundId, loading, isExistingFundSelected } =
-    useFund();
+  const { fundId, selectedFund, loading, isExistingFundSelected } = useFund();
   const [badges, setBadges] = useState<BadgeCounts>({
     investorCount: 0,
     pendingPLCount: 0,
@@ -187,6 +175,7 @@ export function AllocatorSidebarContent() {
 
   function onLogout() {
     clearAuthSession();
+    // Back to Tychi sign-in / fund list to pick another fund.
     window.location.assign(getTychiSignInUrl("allocator"));
   }
 
@@ -201,39 +190,12 @@ export function AllocatorSidebarContent() {
             Tychi Allocator
           </span>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="mt-4 flex w-full items-center gap-2 rounded-lg border border-gray-200/90 bg-slate-50/80 px-3 py-2.5 text-left text-sm shadow-sm transition hover:border-gray-300 hover:bg-white"
-              disabled={loading || funds.length === 0}
-            >
-              <Building2 className="h-4 w-4 shrink-0 text-slate-500" />
-              <span className="flex-1 truncate font-medium text-slate-800">
-                {loading
-                  ? "Loading..."
-                  : (selectedFund?.name ?? "Select fund")}
-              </span>
-              <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-[186px]" align="start">
-            {funds.map((fund) => (
-              <DropdownMenuItem
-                key={fund.id}
-                onClick={() => setFundId(fund.id)}
-                className={cn(fund.id === fundId && "bg-[#EEEDFE] text-[#3C3489]")}
-              >
-                {fund.name}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuItem
-              onClick={() => window.location.assign(getTychiFundListUrl())}
-            >
-              All funds…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="mt-4 flex w-full items-center gap-2 rounded-lg border border-gray-200/90 bg-slate-50/80 px-3 py-2.5 text-left text-sm">
+          <Building2 className="h-4 w-4 shrink-0 text-slate-500" />
+          <span className="flex-1 truncate font-medium text-slate-800">
+            {loading ? "Loading..." : (selectedFund?.name ?? "No fund")}
+          </span>
+        </div>
       </div>
 
       <SidebarNav badges={badges} showMigration={isExistingFundSelected} />
