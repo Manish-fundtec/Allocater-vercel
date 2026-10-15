@@ -4,12 +4,21 @@ const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
   "http://localhost:4000";
 
+const tychiApiBaseUrl =
+  process.env.NEXT_PUBLIC_TYCHI_API_BASE_URL?.replace(/\/$/, "") ??
+  "https://api.stage.tychi.co";
+
 const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
   async redirects() {
     return [
+      {
+        source: "/",
+        destination: "/auth/sign-in",
+        permanent: false,
+      },
       {
         source: "/allocator/investors",
         destination: "/allocator/fund?tab=investors",
@@ -63,6 +72,10 @@ const nextConfig: NextConfig = {
         {
           source: "/api/:path*",
           destination: `${apiBaseUrl}/api/:path*`,
+        },
+        {
+          source: "/gl-api/:path*",
+          destination: `${tychiApiBaseUrl}/:path*`,
         },
       ],
     };

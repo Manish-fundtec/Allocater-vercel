@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Building2,
   ChevronDown,
@@ -16,6 +16,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useFund } from "@/contexts/fund-context";
 import { getInitials } from "@/lib/allocator/format";
+import { clearAuthSession, getStoredUser } from "@/lib/auth/session";
+import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -147,6 +149,7 @@ function SidebarNav({
 }
 
 export function AllocatorSidebarContent() {
+  const router = useRouter();
   const { funds, fundId, selectedFund, setFundId, loading, isExistingFundSelected } =
     useFund();
   const [badges, setBadges] = useState<BadgeCounts>({
@@ -154,13 +157,19 @@ export function AllocatorSidebarContent() {
     pendingPLCount: 0,
     unsentReportsCount: 0,
   });
+  const user = useMemo(() => getStoredUser(), []);
+  const displayName = user?.name || user?.email || "User";
+  const displayRole = user?.role || "Fund Manager";
 
   useEffect(() => {
     if (!fundId) return;
 
     const fetchBadges = async () => {
       try {
-        const res = await fetch(`/api/allocator/badges?fundId=${fundId}`);
+        const res = await apiFetch(
+          `/api/allocator/badges?fundId=${fundId}`,
+          { logoutOn401: false },
+        );
         if (res.ok) {
           setBadges(await res.json());
         }
@@ -173,6 +182,11 @@ export function AllocatorSidebarContent() {
     const interval = setInterval(fetchBadges, BADGE_REFRESH_MS);
     return () => clearInterval(interval);
   }, [fundId]);
+
+  function onLogout() {
+    clearAuthSession();
+    router.replace("/auth/sign-in");
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -211,6 +225,9 @@ export function AllocatorSidebarContent() {
                 {fund.name}
               </DropdownMenuItem>
             ))}
+            <DropdownMenuItem onClick={() => router.push("/fundlist")}>
+              All funds…
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -220,14 +237,17 @@ export function AllocatorSidebarContent() {
       <div className="mt-auto border-t border-gray-100/90 p-4">
         <div className="flex items-center gap-3 rounded-lg bg-slate-50/60 p-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#534AB7] to-[#6d63d4] text-xs font-semibold text-white shadow-sm">
-            {getInitials("Rahul A.")}
+            {getInitials(displayName)}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-slate-900">Rahul A.</p>
-            <p className="truncate text-xs text-slate-500">Fund Manager</p>
+            <p className="truncate text-sm font-medium text-slate-900">
+              {displayName}
+            </p>
+            <p className="truncate text-xs text-slate-500">{displayRole}</p>
           </div>
           <button
             type="button"
+            onClick={onLogout}
             className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-slate-600"
             aria-label="Logout"
           >

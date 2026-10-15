@@ -9,6 +9,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { apiFetch } from "@/lib/api-client";
+import { getSelectedFundId, setSelectedFundId } from "@/lib/auth/session";
 
 export type Fund = {
   id: string;
@@ -39,15 +41,13 @@ type FundContextValue = {
 
 const FundContext = createContext<FundContextValue | null>(null);
 
-const STORAGE_KEY = "allocator_fund_id";
-
 export function FundProvider({ children }: { children: ReactNode }) {
   const [funds, setFunds] = useState<Fund[]>([]);
   const [fundId, setFundIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshFunds = useCallback(async () => {
-    const res = await fetch("/api/funds");
+    const res = await apiFetch("/api/funds", { logoutOn401: true });
     if (!res.ok) throw new Error("Failed to load funds");
     const data: Fund[] = await res.json();
     setFunds(data);
@@ -60,15 +60,13 @@ export function FundProvider({ children }: { children: ReactNode }) {
       try {
         const data = await refreshFunds();
         if (cancelled) return;
-        const stored =
-          typeof window !== "undefined"
-            ? localStorage.getItem(STORAGE_KEY)
-            : null;
+        const stored = getSelectedFundId();
         const initial =
           stored && data.some((f) => f.id === stored)
             ? stored
             : data[0]?.id ?? null;
         setFundIdState(initial);
+        if (initial) setSelectedFundId(initial);
       } catch {
         if (!cancelled) setFunds([]);
       } finally {
@@ -82,7 +80,7 @@ export function FundProvider({ children }: { children: ReactNode }) {
 
   const setFundId = useCallback((id: string) => {
     setFundIdState(id);
-    localStorage.setItem(STORAGE_KEY, id);
+    setSelectedFundId(id);
   }, []);
 
   const selectedFund = useMemo(
