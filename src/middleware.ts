@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/auth/sign-in"];
-
 function hasSession(request: NextRequest): boolean {
   return Boolean(
     request.cookies.get("fundtec_session")?.value ||
       request.cookies.get("userToken")?.value ||
       request.cookies.get("dashboardToken")?.value,
   );
+}
+
+function tychiSignInUrl(): string {
+  const base =
+    process.env.NEXT_PUBLIC_TYCHI_APP_URL?.replace(/\/$/, "") ??
+    "https://stage.tychi.co";
+  return `${base}/auth/sign-in?loginTarget=allocator`;
 }
 
 export function middleware(request: NextRequest) {
@@ -23,22 +28,22 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const isPublic = PUBLIC_PATHS.some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`),
-  );
-  const authed = hasSession(request);
-
-  if (!authed && !isPublic) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/auth/sign-in";
-    url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+  // Login + fund list live on Tychi GL UI — do not host duplicates here.
+  if (
+    pathname === "/auth/sign-in" ||
+    pathname.startsWith("/auth/") ||
+    pathname === "/fundlist"
+  ) {
+    return NextResponse.redirect(tychiSignInUrl());
   }
 
-  if (authed && (pathname === "/auth/sign-in" || pathname === "/")) {
+  if (!hasSession(request)) {
+    return NextResponse.redirect(tychiSignInUrl());
+  }
+
+  if (pathname === "/") {
     const url = request.nextUrl.clone();
-    url.pathname = "/fundlist";
-    url.search = "";
+    url.pathname = "/allocator";
     return NextResponse.redirect(url);
   }
 

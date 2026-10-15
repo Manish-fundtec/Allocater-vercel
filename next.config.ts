@@ -15,11 +15,6 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
-        source: "/",
-        destination: "/auth/sign-in",
-        permanent: false,
-      },
-      {
         source: "/allocator/investors",
         destination: "/allocator/fund?tab=investors",
         permanent: false,

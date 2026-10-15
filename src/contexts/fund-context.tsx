@@ -10,7 +10,12 @@ import {
   type ReactNode,
 } from "react";
 import { apiFetch } from "@/lib/api-client";
-import { getSelectedFundId, setSelectedFundId } from "@/lib/auth/session";
+import {
+  getFundIdFromSearch,
+  getSelectedFundId,
+  setSelectedFundId,
+  syncAllocatorSessionCookie,
+} from "@/lib/auth/session";
 
 export type Fund = {
   id: string;
@@ -41,12 +46,28 @@ type FundContextValue = {
 
 const FundContext = createContext<FundContextValue | null>(null);
 
+function pickInitialFundId(data: Fund[]): string | null {
+  const fromUrl = getFundIdFromSearch();
+  if (fromUrl && data.some((f) => f.id === fromUrl)) {
+    return fromUrl;
+  }
+  const stored = getSelectedFundId();
+  if (stored && data.some((f) => f.id === stored)) {
+    return stored;
+  }
+  // If Tychi sent a fund_id that is not in allocator list yet, still keep it
+  // so the UI can show the id until funds load / DB catch up.
+  if (fromUrl) return fromUrl;
+  return data[0]?.id ?? null;
+}
+
 export function FundProvider({ children }: { children: ReactNode }) {
   const [funds, setFunds] = useState<Fund[]>([]);
   const [fundId, setFundIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshFunds = useCallback(async () => {
+    syncAllocatorSessionCookie();
     const res = await apiFetch("/api/funds", { logoutOn401: true });
     if (!res.ok) throw new Error("Failed to load funds");
     const data: Fund[] = await res.json();
@@ -58,17 +79,24 @@ export function FundProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
+        syncAllocatorSessionCookie();
+        const fromUrl = getFundIdFromSearch();
+        if (fromUrl) setSelectedFundId(fromUrl);
+
         const data = await refreshFunds();
         if (cancelled) return;
-        const stored = getSelectedFundId();
-        const initial =
-          stored && data.some((f) => f.id === stored)
-            ? stored
-            : data[0]?.id ?? null;
+        const initial = pickInitialFundId(data);
         setFundIdState(initial);
         if (initial) setSelectedFundId(initial);
       } catch {
-        if (!cancelled) setFunds([]);
+        if (!cancelled) {
+          setFunds([]);
+          const fromUrl = getFundIdFromSearch();
+          if (fromUrl) {
+            setFundIdState(fromUrl);
+            setSelectedFundId(fromUrl);
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -83,10 +111,19 @@ export function FundProvider({ children }: { children: ReactNode }) {
     setSelectedFundId(id);
   }, []);
 
-  const selectedFund = useMemo(
-    () => funds.find((f) => f.id === fundId) ?? null,
-    [funds, fundId],
-  );
+  const selectedFund = useMemo(() => {
+    const match = funds.find((f) => f.id === fundId);
+    if (match) return match;
+    // Show entered fund even if /api/funds list is empty / still loading.
+    if (fundId) {
+      return {
+        id: fundId,
+        name: `Fund ${fundId.slice(0, 8)}`,
+        currency: "",
+      };
+    }
+    return null;
+  }, [funds, fundId]);
 
   const isExistingFundSelected = useMemo(
     () => isExistingFund(selectedFund?.onboardingMode),

@@ -4,21 +4,8 @@ import {
   removeCookie,
   setCookie,
 } from "@/lib/auth/cookies";
-import {
-  LOGIN_TARGET_ALLOCATOR,
-  type LoginTarget,
-  setLoginTargetCookie,
-} from "@/lib/auth/login-target";
 
 const FUND_STORAGE_KEY = "allocator_fund_id";
-const USER_STORAGE_KEY = "allocator_user";
-
-export type AuthUser = {
-  id?: string;
-  name?: string;
-  email?: string;
-  role?: string;
-};
 
 export function getAccessToken(): string | null {
   return (
@@ -32,35 +19,12 @@ export function isAuthenticated(): boolean {
   return Boolean(getAccessToken());
 }
 
-export function setAuthSession(params: {
-  accessToken: string;
-  loginTarget?: LoginTarget;
-  roleTag?: string;
-  user?: AuthUser | null;
-}) {
-  const { accessToken, loginTarget, roleTag, user } = params;
-  setCookie("userToken", accessToken);
-  // Allocator backend currently accepts fundtec_session (or Bearer).
-  setCookie("fundtec_session", accessToken);
-  setLoginTargetCookie(loginTarget ?? LOGIN_TARGET_ALLOCATOR);
-  if (roleTag) setCookie("roleTag", roleTag);
-  if (user && typeof window !== "undefined") {
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-  }
-}
-
-export function setDashboardToken(token: string) {
-  setCookie("dashboardToken", token, { maxAgeSeconds: 60 * 60 * 6 });
-}
-
-export function getStoredUser(): AuthUser | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(USER_STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as AuthUser;
-  } catch {
-    return null;
+/** Ensure Allocator backend sees a session cookie when only Tychi userToken exists. */
+export function syncAllocatorSessionCookie() {
+  const userToken = getCookie("userToken");
+  const existing = getCookie("fundtec_session");
+  if (userToken && !existing) {
+    setCookie("fundtec_session", userToken);
   }
 }
 
@@ -74,12 +38,40 @@ export function getSelectedFundId(): string | null {
   return localStorage.getItem(FUND_STORAGE_KEY);
 }
 
+/** Prefer ?fund_id= / ?fundId= from Tychi fundlist redirect. */
+export function getFundIdFromSearch(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl =
+      params.get("fund_id") || params.get("fundId") || params.get("fundid");
+    const normalized = fromUrl ? String(fromUrl).trim() : "";
+    return normalized || null;
+  } catch {
+    return null;
+  }
+}
+
 export function clearAuthSession() {
   clearAuthCookies();
   removeCookie("userToken");
   removeCookie("fundtec_session");
+  removeCookie("dashboardToken");
   if (typeof window !== "undefined") {
-    localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem(FUND_STORAGE_KEY);
   }
+}
+
+export function getTychiSignInUrl(loginTarget = "allocator"): string {
+  const base =
+    process.env.NEXT_PUBLIC_TYCHI_APP_URL?.replace(/\/$/, "") ??
+    "https://stage.tychi.co";
+  return `${base}/auth/sign-in?loginTarget=${encodeURIComponent(loginTarget)}`;
+}
+
+export function getTychiFundListUrl(): string {
+  const base =
+    process.env.NEXT_PUBLIC_TYCHI_APP_URL?.replace(/\/$/, "") ??
+    "https://stage.tychi.co";
+  return `${base}/fundlist?loginTarget=allocator`;
 }

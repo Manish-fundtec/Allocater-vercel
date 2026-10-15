@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   Building2,
   ChevronDown,
@@ -16,7 +16,11 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useFund } from "@/contexts/fund-context";
 import { getInitials } from "@/lib/allocator/format";
-import { clearAuthSession, getStoredUser } from "@/lib/auth/session";
+import {
+  clearAuthSession,
+  getTychiFundListUrl,
+  getTychiSignInUrl,
+} from "@/lib/auth/session";
 import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -149,7 +153,6 @@ function SidebarNav({
 }
 
 export function AllocatorSidebarContent() {
-  const router = useRouter();
   const { funds, fundId, selectedFund, setFundId, loading, isExistingFundSelected } =
     useFund();
   const [badges, setBadges] = useState<BadgeCounts>({
@@ -157,9 +160,8 @@ export function AllocatorSidebarContent() {
     pendingPLCount: 0,
     unsentReportsCount: 0,
   });
-  const user = useMemo(() => getStoredUser(), []);
-  const displayName = user?.name || user?.email || "User";
-  const displayRole = user?.role || "Fund Manager";
+  const displayName = "User";
+  const displayRole = "Fund Manager";
 
   useEffect(() => {
     if (!fundId) return;
@@ -185,7 +187,7 @@ export function AllocatorSidebarContent() {
 
   function onLogout() {
     clearAuthSession();
-    router.replace("/auth/sign-in");
+    window.location.assign(getTychiSignInUrl("allocator"));
   }
 
   return (
@@ -225,7 +227,9 @@ export function AllocatorSidebarContent() {
                 {fund.name}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuItem onClick={() => router.push("/fundlist")}>
+            <DropdownMenuItem
+              onClick={() => window.location.assign(getTychiFundListUrl())}
+            >
               All funds…
             </DropdownMenuItem>
           </DropdownMenuContent>
