@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFund } from "@/contexts/fund-context";
 import { PageHeader } from "@/components/allocator/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,14 @@ export function AllocationHistoryContent({
     if (!fundLoading && fundId) load();
   }, [fundId, fundLoading, load]);
 
+  // Only the latest completed period can be removed (LIFO). Prefer API flag;
+  // fall back to first completed row when the field is missing.
+  const latestDeletablePeriod = useMemo(() => {
+    const fromApi = runs.find((r) => r.canDelete)?.period;
+    if (fromApi) return fromApi;
+    return runs.find((r) => r.status === "completed")?.period ?? null;
+  }, [runs]);
+
   async function onDelete(period: string) {
     if (!fundId || deletingPeriod) return;
     const label = formatPeriodLong(period);
@@ -83,7 +91,7 @@ export function AllocationHistoryContent({
     <>
       {!embedded ? <PageHeader title="Allocation History" /> : null}
       {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <Table>
           <TableHeader>
             <TableRow>
@@ -92,59 +100,70 @@ export function AllocationHistoryContent({
               <TableHead>Status</TableHead>
               <TableHead>Investors</TableHead>
               <TableHead>Run at</TableHead>
-              <TableHead className="w-[110px]" />
+              <TableHead className="min-w-[120px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {runs.map((run) => (
-              <TableRow key={run.period + (run.runAt ?? "")}>
-                <TableCell className="font-medium">
-                  {formatPeriodLong(run.period)}
-                </TableCell>
-                <TableCell>
-                  {run.totalProfit != null ? (
-                    <span
-                      className={
-                        run.totalProfit >= 0 ? "text-green-600" : "text-red-600"
+            {runs.map((run) => {
+              const showDelete =
+                run.status === "completed" &&
+                run.period === latestDeletablePeriod;
+              return (
+                <TableRow key={run.period + (run.runAt ?? "")}>
+                  <TableCell className="font-medium">
+                    {formatPeriodLong(run.period)}
+                  </TableCell>
+                  <TableCell>
+                    {run.totalProfit != null ? (
+                      <span
+                        className={
+                          run.totalProfit >= 0
+                            ? "text-green-600"
+                            : "text-red-600"
+                        }
+                      >
+                        {formatProfit(run.totalProfit)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        run.status === "completed"
+                          ? "green"
+                          : run.status === "failed"
+                            ? "red"
+                            : "orange"
                       }
                     >
-                      {formatProfit(run.totalProfit)}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      run.status === "completed"
-                        ? "green"
-                        : run.status === "failed"
-                          ? "red"
-                          : "orange"
-                    }
-                  >
-                    {run.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>{run.investorCount}</TableCell>
-                <TableCell>
-                  {run.runAt ? formatDate(run.runAt) : "—"}
-                </TableCell>
-                <TableCell>
-                  {run.canDelete ? (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={deletingPeriod != null}
-                      onClick={() => void onDelete(run.period)}
-                    >
-                      {deletingPeriod === run.period ? "Deleting…" : "Delete"}
-                    </Button>
-                  ) : null}
-                </TableCell>
-              </TableRow>
-            ))}
+                      {run.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{run.investorCount}</TableCell>
+                  <TableCell>
+                    {run.runAt ? formatDate(run.runAt) : "—"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {showDelete ? (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={deletingPeriod != null}
+                        onClick={() => void onDelete(run.period)}
+                      >
+                        {deletingPeriod === run.period
+                          ? "Deleting…"
+                          : "Delete"}
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
