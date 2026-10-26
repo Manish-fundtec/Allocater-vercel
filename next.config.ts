@@ -40,11 +40,6 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
-        source: "/allocator/fees",
-        destination: "/allocator/allocation?tab=structure",
-        permanent: false,
-      },
-      {
         source: "/allocator/allocation/breakdown/:investorId",
         destination: "/allocator/allocation?tab=review&investorId=:investorId",
         permanent: false,

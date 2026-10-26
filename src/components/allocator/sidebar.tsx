@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   LayoutDashboard,
   LogOut,
+  Percent,
   Play,
   UploadCloud,
   Users,
@@ -51,6 +52,7 @@ const BASE_NAV_ITEMS: NavItem[] = [
     badgeVariant: "orange",
   },
   { label: "Allocation", href: "/allocator/allocation", icon: Play },
+  { label: "Fee Structure", href: "/allocator/fees", icon: Percent },
   { label: "Reports", href: "/allocator/reports", icon: FileSpreadsheet },
 ];
 

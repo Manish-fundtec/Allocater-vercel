@@ -343,7 +343,7 @@ export function RunAllocationContent({ embedded }: { embedded?: boolean }) {
             {(feeConfig.perfFeePct as number) ?? 0}% · Hurdle{" "}
             {(feeConfig.hurdleRate as number) ?? 0}% ·{" "}
             {String(feeConfig.frequency)}{" "}
-            <Link href="/allocator/allocation?tab=structure" className="text-[#534AB7]">
+            <Link href="/allocator/fees?tab=structure" className="text-[#534AB7]">
               Change
             </Link>
           </CardContent>
