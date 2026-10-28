@@ -862,9 +862,43 @@ type GpSharesResponse = {
   offeringId: string;
   offeringName?: string;
   imGpInInvestor: boolean;
-  totalSharePct: number;
-  shares: GpShareRow[];
+  /** @deprecated prefer mgmtShares */
+  totalSharePct?: number;
+  /** @deprecated prefer mgmtShares */
+  shares?: GpShareRow[];
+  mgmtShares?: GpShareRow[];
+  mgmtTotalSharePct?: number;
+  perfShares?: GpShareRow[];
+  perfTotalSharePct?: number;
 };
+
+type FeeShareKind = "mgmt" | "perf";
+
+function rowsFromResponse(
+  data: GpSharesResponse,
+  kind: FeeShareKind,
+): GpShareRow[] {
+  if (kind === "perf") {
+    return Array.isArray(data.perfShares) ? data.perfShares : [];
+  }
+  if (Array.isArray(data.mgmtShares)) return data.mgmtShares;
+  return Array.isArray(data.shares) ? data.shares : [];
+}
+
+function shareMapFromRows(rows: GpShareRow[]): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const row of rows) {
+    next[row.investorId] = row.sharePct > 0 ? String(row.sharePct) : "";
+  }
+  return next;
+}
+
+function totalFromShareMap(shares: Record<string, string>): number {
+  return Object.values(shares).reduce((sum, v) => {
+    const n = Number(v);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
+}
 
 function ImGpSetupContent() {
   const { fundId, selectedFund, loading: fundLoading } = useFund();
@@ -873,10 +907,11 @@ function ImGpSetupContent() {
   const [loadingOfferings, setLoadingOfferings] = useState(false);
   const [offeringId, setOfferingId] = useState<string>("");
   const [investors, setInvestors] = useState<ImGpInvestor[]>([]);
-  const [shares, setShares] = useState<Record<string, string>>({});
+  const [mgmtShares, setMgmtShares] = useState<Record<string, string>>({});
+  const [perfShares, setPerfShares] = useState<Record<string, string>>({});
   const [loadingShares, setLoadingShares] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savingKind, setSavingKind] = useState<FeeShareKind | null>(null);
+  const [savedKind, setSavedKind] = useState<FeeShareKind | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const selectedOffering = useMemo(
@@ -901,7 +936,10 @@ function ImGpSetupContent() {
         );
         if (!shareRes.ok || cancelled) return;
         const data = (await shareRes.json()) as GpSharesResponse;
-        const hasShares = (data.shares ?? []).some((s) => s.sharePct > 0);
+        const mgmt = rowsFromResponse(data, "mgmt");
+        const perf = rowsFromResponse(data, "perf");
+        const hasShares =
+          mgmt.some((s) => s.sharePct > 0) || perf.some((s) => s.sharePct > 0);
         if (data.imGpInInvestor || hasShares) {
           setImGpInInvestor(true);
         }
@@ -947,13 +985,14 @@ function ImGpSetupContent() {
   useEffect(() => {
     if (!imGpInInvestor || !fundId || !offeringId) {
       setInvestors([]);
-      setShares({});
+      setMgmtShares({});
+      setPerfShares({});
       return;
     }
     let cancelled = false;
     setLoadingShares(true);
     setError(null);
-    setSaved(false);
+    setSavedKind(null);
     fetch(
       `/api/allocator/fees/gp-shares?fundId=${fundId}&offeringId=${offeringId}`,
     )
@@ -969,25 +1008,25 @@ function ImGpSetupContent() {
       .then((data) => {
         if (cancelled) return;
         setImGpInInvestor(data.imGpInInvestor !== false);
-        const rows = Array.isArray(data.shares) ? data.shares : [];
-        setInvestors(
-          rows.map((row) => ({
+        const mgmtRows = rowsFromResponse(data, "mgmt");
+        const perfRows = rowsFromResponse(data, "perf");
+        const byId = new Map<string, ImGpInvestor>();
+        for (const row of [...mgmtRows, ...perfRows]) {
+          byId.set(row.investorId, {
             id: row.investorId,
             name: row.investorName,
             class: data.offeringId,
-          })),
-        );
-        const next: Record<string, string> = {};
-        for (const row of rows) {
-          next[row.investorId] =
-            row.sharePct > 0 ? String(row.sharePct) : "";
+          });
         }
-        setShares(next);
+        setInvestors([...byId.values()]);
+        setMgmtShares(shareMapFromRows(mgmtRows));
+        setPerfShares(shareMapFromRows(perfRows));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setInvestors([]);
-        setShares({});
+        setMgmtShares({});
+        setPerfShares({});
         setError(err instanceof Error ? err.message : "Could not load shares");
       })
       .finally(() => {
@@ -998,50 +1037,54 @@ function ImGpSetupContent() {
     };
   }, [imGpInInvestor, fundId, offeringId]);
 
-  const totalShare = useMemo(() => {
-    return Object.values(shares).reduce((sum, v) => {
-      const n = Number(v);
-      return sum + (Number.isFinite(n) ? n : 0);
-    }, 0);
-  }, [shares]);
+  const mgmtTotal = useMemo(() => totalFromShareMap(mgmtShares), [mgmtShares]);
+  const perfTotal = useMemo(() => totalFromShareMap(perfShares), [perfShares]);
+  const mgmtRounded = Math.round(mgmtTotal * 100) / 100;
+  const perfRounded = Math.round(perfTotal * 100) / 100;
+  const mgmtOk = Math.abs(mgmtRounded - 100) < 0.05;
+  const perfOk = Math.abs(perfRounded - 100) < 0.05;
 
-  const totalRounded = Math.round(totalShare * 100) / 100;
-  const totalOk = Math.abs(totalRounded - 100) < 0.05;
-
-  function setShare(investorId: string, value: string) {
-    setShares((prev) => ({ ...prev, [investorId]: value }));
-    setSaved(false);
+  function setShare(kind: FeeShareKind, investorId: string, value: string) {
+    const setter = kind === "mgmt" ? setMgmtShares : setPerfShares;
+    setter((prev) => ({ ...prev, [investorId]: value }));
+    setSavedKind(null);
     setError(null);
   }
 
   function onToggleImGp(checked: boolean) {
     setImGpInInvestor(checked);
-    setSaved(false);
+    setSavedKind(null);
     setError(null);
     if (!checked) {
       setOfferingId("");
       setInvestors([]);
-      setShares({});
+      setMgmtShares({});
+      setPerfShares({});
     }
   }
 
   function onSelectOffering(id: string) {
     setOfferingId(id);
-    setShares({});
-    setSaved(false);
+    setMgmtShares({});
+    setPerfShares({});
+    setSavedKind(null);
     setError(null);
   }
 
-  async function save() {
+  async function saveKind(kind: FeeShareKind, clear = false) {
     if (!fundId || !offeringId) return;
     if (investors.length === 0) return;
-    if (!totalOk) {
-      setError("Shares must total 100% before saving.");
+    const map = kind === "mgmt" ? mgmtShares : perfShares;
+    const rounded = kind === "mgmt" ? mgmtRounded : perfRounded;
+    const ok = kind === "mgmt" ? mgmtOk : perfOk;
+    const label = kind === "mgmt" ? "Management fee" : "Performance fee";
+    if (!clear && !ok) {
+      setError(`${label} shares must total 100% before saving.`);
       return;
     }
-    setSaving(true);
+    setSavingKind(kind);
     setError(null);
-    setSaved(false);
+    setSavedKind(null);
     try {
       const res = await fetch("/api/allocator/fees/gp-shares", {
         method: "POST",
@@ -1050,9 +1093,10 @@ function ImGpSetupContent() {
           fundId,
           offeringId,
           imGpInInvestor: true,
+          feeType: kind,
           shares: investors.map((inv) => ({
             investorId: inv.id,
-            sharePct: Number(shares[inv.id]) || 0,
+            sharePct: clear ? 0 : Number(map[inv.id]) || 0,
           })),
         }),
       });
@@ -1060,67 +1104,162 @@ function ImGpSetupContent() {
         | (GpSharesResponse & { error?: string })
         | null;
       if (!res.ok) {
-        throw new Error(data?.error ?? "Could not save IM / GP shares");
+        throw new Error(
+          data?.error ?? `Could not save ${label.toLowerCase()} shares`,
+        );
       }
-      if (data?.shares) {
-        const next: Record<string, string> = {};
-        for (const row of data.shares) {
-          next[row.investorId] =
-            row.sharePct > 0 ? String(row.sharePct) : "";
-        }
-        setShares(next);
-        setInvestors(
-          data.shares.map((row) => ({
+      if (data) {
+        const mgmtRows = rowsFromResponse(data, "mgmt");
+        const perfRows = rowsFromResponse(data, "perf");
+        const byId = new Map<string, ImGpInvestor>();
+        for (const row of [...mgmtRows, ...perfRows]) {
+          byId.set(row.investorId, {
             id: row.investorId,
             name: row.investorName,
             class: data.offeringId,
-          })),
-        );
+          });
+        }
+        if (byId.size > 0) setInvestors([...byId.values()]);
+        setMgmtShares(shareMapFromRows(mgmtRows));
+        setPerfShares(shareMapFromRows(perfRows));
+      } else if (clear) {
+        if (kind === "mgmt") setMgmtShares({});
+        else setPerfShares({});
       }
-      setSaved(true);
+      setSavedKind(kind);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Could not save shares");
+      setError(
+        err instanceof Error
+          ? err.message
+          : `Could not save ${label.toLowerCase()} shares`,
+      );
     } finally {
-      setSaving(false);
+      setSavingKind(null);
     }
   }
 
-  async function clearAndSave() {
-    if (!fundId || !offeringId) {
-      setShares({});
-      setSaved(false);
-      return;
-    }
-    setShares({});
-    setSaving(true);
-    setError(null);
-    setSaved(false);
-    try {
-      const res = await fetch("/api/allocator/fees/gp-shares", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fundId,
-          offeringId,
-          imGpInInvestor: true,
-          shares: investors.map((inv) => ({
-            investorId: inv.id,
-            sharePct: 0,
-          })),
-        }),
-      });
-      const data = (await res.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      if (!res.ok) {
-        throw new Error(data?.error ?? "Could not clear IM / GP shares");
-      }
-      setSaved(true);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Could not clear shares");
-    } finally {
-      setSaving(false);
-    }
+  function renderShareSection(kind: FeeShareKind) {
+    const map = kind === "mgmt" ? mgmtShares : perfShares;
+    const rounded = kind === "mgmt" ? mgmtRounded : perfRounded;
+    const ok = kind === "mgmt" ? mgmtOk : perfOk;
+    const title =
+      kind === "mgmt" ? "Management fee share" : "Performance fee share";
+    const blurb =
+      kind === "mgmt"
+        ? "Split of management fee GP subscription across IM / GP investors."
+        : "Split of performance fee GP subscription across IM / GP investors.";
+    const saving = savingKind === kind;
+    const saved = savedKind === kind;
+
+    return (
+      <section className="border-t border-slate-100 pt-5">
+        <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              {title}
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {blurb} Enter % share (e.g. 60 / 40).
+            </p>
+          </div>
+          <p
+            className={
+              ok
+                ? "text-sm font-semibold text-emerald-700"
+                : "text-sm font-semibold text-slate-700"
+            }
+          >
+            Total {formatNumber(rounded, 2)}%
+            {!ok && rounded > 0 ? (
+              <span className="ml-1.5 text-xs font-normal text-amber-700">
+                (not 100%)
+              </span>
+            ) : null}
+          </p>
+        </div>
+
+        {saved ? (
+          <p className="mb-3 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+            {title} saved.
+          </p>
+        ) : null}
+
+        {fundLoading || loadingShares ? (
+          <p className="py-8 text-center text-sm text-slate-500">
+            Loading investors…
+          </p>
+        ) : investors.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-slate-200 py-8 text-center text-sm text-slate-500">
+            No active investors linked to{" "}
+            <span className="font-medium text-slate-700">
+              {selectedOffering?.name ?? "this offering"}
+            </span>
+            . Assign investor class / offering first.
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-slate-200">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Investor</TableHead>
+                  <TableHead className="w-40 text-right">Share (%)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {investors.map((inv) => (
+                  <TableRow key={`${kind}-${inv.id}`}>
+                    <TableCell className="font-medium text-slate-800">
+                      {inv.name}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        className="ml-auto w-28 text-right"
+                        placeholder="0"
+                        value={map[inv.id] ?? ""}
+                        onChange={(e) => setShare(kind, inv.id, e.target.value)}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="bg-slate-50/80">
+                  <TableCell className="font-semibold text-slate-900">
+                    Total
+                  </TableCell>
+                  <TableCell className="text-right font-semibold text-slate-900">
+                    {formatNumber(rounded, 2)}%
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => void saveKind(kind, true)}
+            disabled={investors.length === 0 || savingKind != null}
+          >
+            Clear shares
+          </Button>
+          <Button
+            onClick={() => void saveKind(kind)}
+            disabled={
+              investors.length === 0 ||
+              rounded <= 0 ||
+              !ok ||
+              savingKind != null
+            }
+          >
+            {saving ? "Saving…" : "Save shares"}
+          </Button>
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -1131,8 +1270,9 @@ function ImGpSetupContent() {
             IM / GP Setup
           </CardTitle>
           <p className="mt-0.5 text-xs text-slate-500">
-            Map IM / GP fee share across investors when they sit in the investor
-            register. Saved shares drive auto GP subscription split on allocate.
+            Map management and performance fee GP share across investors when
+            they sit in the investor register. Saved shares drive auto GP
+            subscription split on allocate.
           </p>
         </div>
         {selectedFund?.name ? (
@@ -1142,11 +1282,6 @@ function ImGpSetupContent() {
         ) : null}
       </CardHeader>
       <CardContent className="space-y-5 pt-5">
-        {saved ? (
-          <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-            IM / GP shares saved. Allocate / reports will use this split.
-          </p>
-        ) : null}
         {error ? (
           <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             {error}
@@ -1215,115 +1350,10 @@ function ImGpSetupContent() {
             </section>
 
             {offeringId ? (
-              <section className="border-t border-slate-100 pt-5">
-                <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
-                  <div>
-                    <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      Investors &amp; share
-                    </h3>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Investors assigned to{" "}
-                      <span className="font-medium text-slate-700">
-                        {selectedOffering?.name ?? "offering"}
-                      </span>
-                      . Enter % share (e.g. 60 / 40).
-                    </p>
-                  </div>
-                  <p
-                    className={
-                      totalOk
-                        ? "text-sm font-semibold text-emerald-700"
-                        : "text-sm font-semibold text-slate-700"
-                    }
-                  >
-                    Total {formatNumber(totalRounded, 2)}%
-                    {!totalOk && totalRounded > 0 ? (
-                      <span className="ml-1.5 text-xs font-normal text-amber-700">
-                        (not 100%)
-                      </span>
-                    ) : null}
-                  </p>
-                </div>
-
-                {fundLoading || loadingShares ? (
-                  <p className="py-8 text-center text-sm text-slate-500">
-                    Loading investors…
-                  </p>
-                ) : investors.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-slate-200 py-8 text-center text-sm text-slate-500">
-                    No active investors linked to{" "}
-                    <span className="font-medium text-slate-700">
-                      {selectedOffering?.name ?? "this offering"}
-                    </span>
-                    . Assign investor class / offering first.
-                  </p>
-                ) : (
-                  <div className="overflow-hidden rounded-lg border border-slate-200">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Investor</TableHead>
-                          <TableHead className="w-40 text-right">
-                            Share (%)
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {investors.map((inv) => (
-                          <TableRow key={inv.id}>
-                            <TableCell className="font-medium text-slate-800">
-                              {inv.name}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Input
-                                type="number"
-                                min={0}
-                                max={100}
-                                step="0.01"
-                                className="ml-auto w-28 text-right"
-                                placeholder="0"
-                                value={shares[inv.id] ?? ""}
-                                onChange={(e) =>
-                                  setShare(inv.id, e.target.value)
-                                }
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="bg-slate-50/80">
-                          <TableCell className="font-semibold text-slate-900">
-                            Total
-                          </TableCell>
-                          <TableCell className="text-right font-semibold text-slate-900">
-                            {formatNumber(totalRounded, 2)}%
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => void clearAndSave()}
-                    disabled={investors.length === 0 || saving}
-                  >
-                    Clear shares
-                  </Button>
-                  <Button
-                    onClick={() => void save()}
-                    disabled={
-                      investors.length === 0 ||
-                      totalRounded <= 0 ||
-                      !totalOk ||
-                      saving
-                    }
-                  >
-                    {saving ? "Saving…" : "Save shares"}
-                  </Button>
-                </div>
-              </section>
+              <>
+                {renderShareSection("mgmt")}
+                {renderShareSection("perf")}
+              </>
             ) : null}
           </>
         ) : (
