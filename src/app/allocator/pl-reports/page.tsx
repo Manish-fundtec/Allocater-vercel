@@ -59,10 +59,11 @@ export function PLReportsContent({
     .filter((r) => r.net_profit != null)
     .reduce((s, r) => s + (r.net_profit ?? 0), 0);
 
-  async function importPeriod(period: string) {
+  async function fetchPeriod(period: string, mode: "import" | "refetch") {
     if (!fundId) return;
     setImportingPeriod(period);
     setImportError("");
+    const failLabel = mode === "refetch" ? "Refetch failed" : "Import failed";
     try {
       const res = await fetch("/api/allocator/tychi/fetch-pl", {
         method: "POST",
@@ -76,23 +77,38 @@ export function PLReportsContent({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(
-          (data as { error?: string }).error ?? "Import failed",
+          (data as { error?: string }).error ?? failLabel,
         );
       }
       const errors = (data as { errors?: { period: string; message: string }[] })
         .errors;
       if (errors?.length) {
         throw new Error(
-          errors.map((e) => e.message).join("; ") || "Import failed",
+          errors.map((e) => e.message).join("; ") || failLabel,
         );
       }
       await load({ silent: true });
       onImported?.();
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : "Import failed");
+      setImportError(e instanceof Error ? e.message : failLabel);
     } finally {
       setImportingPeriod(null);
     }
+  }
+
+  function refetchButton(period: string) {
+    const busy = importingPeriod != null;
+    const thisOne = importingPeriod === period;
+    return (
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={busy}
+        onClick={() => void fetchPeriod(period, "refetch")}
+      >
+        {thisOne ? "Refetching…" : "Refetch"}
+      </Button>
+    );
   }
 
   function statusBadge(status: PLReport["allocation_status"]) {
@@ -165,29 +181,35 @@ export function PLReportsContent({
                   <TableCell>{statusBadge(r.allocation_status)}</TableCell>
                   <TableCell>
                     {r.allocation_status === "allocated" ? (
-                      <Button variant="secondary" size="sm" asChild>
-                        <Link
-                          href={`/allocator/allocation?tab=history&period=${r.period}`}
-                        >
-                          View
-                        </Link>
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button variant="secondary" size="sm" asChild>
+                          <Link
+                            href={`/allocator/allocation?tab=history&period=${r.period}`}
+                          >
+                            View
+                          </Link>
+                        </Button>
+                        {refetchButton(r.period)}
+                      </div>
                     ) : r.allocation_status === "migrated" ? (
                       <span className="text-sm text-gray-500">—</span>
                     ) : r.allocation_status === "pending" ? (
-                      <Button size="sm" asChild>
-                        <Link
-                          href={`/allocator/allocation?tab=run&period=${r.period}`}
-                        >
-                          Run allocation
-                        </Link>
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button size="sm" asChild>
+                          <Link
+                            href={`/allocator/allocation?tab=run&period=${r.period}`}
+                          >
+                            Run allocation
+                          </Link>
+                        </Button>
+                        {refetchButton(r.period)}
+                      </div>
                     ) : (
                       <Button
                         variant="secondary"
                         size="sm"
                         disabled={importingPeriod != null}
-                        onClick={() => void importPeriod(r.period)}
+                        onClick={() => void fetchPeriod(r.period, "import")}
                       >
                         {importingPeriod === r.period
                           ? "Importing…"
