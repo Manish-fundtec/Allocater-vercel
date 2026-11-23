@@ -5,7 +5,10 @@ export type InvestorRegisterLine = {
   investorName: string;
   shareClass: string | null;
   transactionType: string;
+  /** Issued shares at the subscription price. */
   units: number;
+  equalisationAdj?: number;
+  adjustedUnits?: number;
   grossAmount: number;
   transactionCharges: number;
   netAmount: number;
@@ -27,6 +30,8 @@ export type InvestorRegisterReport = {
   lines: InvestorRegisterLine[];
   totals: {
     units: number;
+    equalisationAdj?: number;
+    adjustedUnits?: number;
     grossAmount: number;
     transactionCharges: number;
     netAmount: number;
@@ -67,12 +72,27 @@ export function formatRegisterMoney(
   return abs;
 }
 
-export function formatRegisterUnits(value: number | null | undefined): string {
+export function formatRegisterUnits(
+  value: number | null | undefined,
+  parenIfNegative = false,
+): string {
   if (value == null || !Number.isFinite(value)) return "–";
-  return value.toLocaleString("en-IN", {
+  const abs = Math.abs(value).toLocaleString("en-IN", {
     minimumFractionDigits: 4,
     maximumFractionDigits: 4,
   });
+  if (parenIfNegative && value < 0) return `(${abs})`;
+  if (value < 0) return `(${abs})`;
+  return abs;
+}
+
+/** Positive charge is a fee deducted from gross. Negative is an onboarding credit. */
+export function formatRegisterCharge(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value) || Math.abs(value) < 0.005) {
+    return "–";
+  }
+  if (value > 0) return formatRegisterMoney(value, true);
+  return formatRegisterMoney(Math.abs(value));
 }
 
 export async function downloadInvestorRegisterXlsx(report: InvestorRegisterReport) {
@@ -83,7 +103,9 @@ export async function downloadInvestorRegisterXlsx(report: InvestorRegisterRepor
     "Investor Name",
     "Class",
     "Transaction Type",
-    "Units",
+    "Issued Shares",
+    "Equalisation Share Adj.",
+    "Adjusted Issued Shares",
     "Gross Amount",
     "Transaction Charges",
     "Net Amount",
@@ -101,6 +123,8 @@ export async function downloadInvestorRegisterXlsx(report: InvestorRegisterRepor
     line.shareClass,
     line.transactionType,
     line.units,
+    line.equalisationAdj || null,
+    line.adjustedUnits ?? line.units,
     line.grossAmount,
     line.transactionCharges ? -line.transactionCharges : null,
     line.netAmount,
@@ -118,6 +142,8 @@ export async function downloadInvestorRegisterXlsx(report: InvestorRegisterRepor
     "",
     "",
     report.totals.units,
+    report.totals.equalisationAdj || null,
+    report.totals.adjustedUnits ?? report.totals.units,
     report.totals.grossAmount,
     report.totals.transactionCharges ? -report.totals.transactionCharges : null,
     report.totals.netAmount,

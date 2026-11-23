@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   downloadInvestorRegisterXlsx,
+  formatRegisterCharge,
   formatRegisterDate,
   formatRegisterMoney,
   formatRegisterUnits,
@@ -26,7 +27,9 @@ const COLUMNS = [
   "Investor Name",
   "Class",
   "Transaction Type",
-  "Units",
+  "Issued Shares",
+  "Equalisation Share Adj.",
+  "Adjusted Issued Shares",
   "Gross Amount",
   "Transaction Charges",
   "Net Amount",
@@ -173,17 +176,25 @@ export function InvestorRegisterReportContent() {
                       {formatRegisterUnits(line.units)}
                     </td>
                     <td className="border border-slate-200 px-2 py-1.5 text-right tabular-nums">
+                      {line.equalisationAdj != null &&
+                      Math.abs(line.equalisationAdj) >= 0.00005
+                        ? formatRegisterUnits(line.equalisationAdj, true)
+                        : "–"}
+                    </td>
+                    <td className="border border-slate-200 px-2 py-1.5 text-right tabular-nums">
+                      {formatRegisterUnits(line.adjustedUnits ?? line.units)}
+                    </td>
+                    <td className="border border-slate-200 px-2 py-1.5 text-right tabular-nums">
                       {formatRegisterMoney(line.grossAmount)}
                     </td>
                     <td
                       className={cn(
                         "border border-slate-200 px-2 py-1.5 text-right tabular-nums",
                         line.transactionCharges > 0 && "text-red-700",
+                        line.transactionCharges < 0 && "text-emerald-700",
                       )}
                     >
-                      {line.transactionCharges > 0
-                        ? formatRegisterMoney(line.transactionCharges, true)
-                        : "–"}
+                      {formatRegisterCharge(line.transactionCharges)}
                     </td>
                     <td className="border border-slate-200 px-2 py-1.5 text-right tabular-nums">
                       {formatRegisterMoney(line.netAmount)}
@@ -214,12 +225,18 @@ export function InvestorRegisterReportContent() {
                       {formatRegisterUnits(totals.units)}
                     </td>
                     <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
+                      {totals.equalisationAdj
+                        ? formatRegisterUnits(totals.equalisationAdj, true)
+                        : "–"}
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
+                      {formatRegisterUnits(totals.adjustedUnits ?? totals.units)}
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
                       {formatRegisterMoney(totals.grossAmount)}
                     </td>
                     <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums text-red-700">
-                      {totals.transactionCharges > 0
-                        ? formatRegisterMoney(totals.transactionCharges, true)
-                        : "–"}
+                      {formatRegisterCharge(totals.transactionCharges)}
                     </td>
                     <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
                       {formatRegisterMoney(totals.netAmount)}
