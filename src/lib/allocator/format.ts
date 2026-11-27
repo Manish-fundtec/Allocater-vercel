@@ -45,7 +45,21 @@ export function formatDate(d: string | Date): string {
   });
 }
 
+function dailyPeriodLabel(period: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(period);
+  if (!match) return null;
+  const d = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function formatPeriodLabel(period: string): string {
+  const daily = dailyPeriodLabel(period);
+  if (daily) return daily;
   const [year, month] = period.split("-");
   if (!year || !month) return period;
   const d = new Date(Number(year), Number(month) - 1, 1);
@@ -55,6 +69,8 @@ export function formatPeriodLabel(period: string): string {
 }
 
 export function formatPeriodLong(period: string): string {
+  const daily = dailyPeriodLabel(period);
+  if (daily) return daily;
   const [year, month] = period.split("-");
   if (!year || !month) return period;
   const d = new Date(Number(year), Number(month) - 1, 1);
